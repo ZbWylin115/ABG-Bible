@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ABG Bible</title>
+
+<!-- PWA: Manifest + theme -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f0f12">
+
+<!-- iOS PWA helpers -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<style>
+  :root { --bg:#0f0f12; --card:#17171c; --ink:#eee; --muted:#a7a7b0; --acc:#7dd3fc; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:16px 18px; border-bottom:1px solid #22232a; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:20px; margin:0; letter-spacing:.3px; }
+  main { padding:14px; max-width:980px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid #23242c; border-radius:12px; padding:14px; }
+  .grid { display:grid; grid-template-columns: 1fr; gap:12px; }
+  @media (min-width:720px){ .grid { grid-template-columns: repeat(3, 1fr); } }
+  label { font-size:13px; color:var(--muted); display:block; margin-bottom:6px; }
+  select, input { width:100%; background:#101016; border:1px solid #2c2d36; color:var(--ink); padding:10px 11px; border-radius:10px; outline:none; }
+  .row { display:grid; grid-template-columns: 1fr; gap:12px; }
+  @media (min-width:720px){ .row { grid-template-columns: repeat(3, 1fr); } }
+  .btns { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+  button { background:#1e90ff1a; color:var(--ink); border:1px solid #2a5fff55; padding:10px 14px; border-radius:10px; cursor:pointer; }
+  button:hover { background:#1e90ff30; }
+  .hint { color:var(--muted); font-size:12px; margin-top:8px; }
+  textarea { width:100%; min-height:360px; background:#0e0e13; border:1px solid #2b2c34; color:var(--ink); padding:12px; border-radius:12px; margin-top:12px; white-space:pre-wrap; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#0c1220; border:1px solid #223; color:#cde9ff; font-size:12px; }
+  footer { padding:10px 16px 20px; color:var(--muted); font-size:12px; text-align:center; }
+  a { color: var(--acc); text-decoration: none; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="pill">🧋 ABG Bible</div>
+    <h1>Scene-aware play generator</h1>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="grid">
+        <div>
+          <label>Subculture</label>
+          <select id="race">
+            <option>Chinese</option>
+            <option>Vietnamese</option>
+            <option>Filipina</option>
+            <option>Korean</option>
+            <option>Thai</option>
+            <option>Cambodian/Lao</option>
+            <option>Japanese-American</option>
+            <option>Mixed</option>
+          </select>
+        </div>
+        <div>
+          <label>Date Type</label>
+          <select id="dtype">
+            <option>Boba</option>
+            <option>Café</option>
+            <option>Rave/Club</option>
+            <option>Rooftop/Bar</option>
+            <option>Karaoke/House</option>
+            <option>Thrift/Art Walk</option>
+            <option>Late-night Food</option>
+          </select>
+        </div>
+        <div>
+          <label>Interest Level</label>
+          <select id="interest">
+            <option>(Auto)</option>
+            <option>Low</option>
+            <option>Medium</option>
+            <option>High</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div>
+          <label>City (optional)</label>
+          <input id="city" placeholder="e.g., San Jose" />
+        </div>
+        <div>
+          <label>Venue/Spot (optional)</label>
+          <input id="venue" placeholder="e.g., Tiger Sugar" />
+        </div>
+        <div>
+          <label>Alt Spot (optional)</label>
+          <input id="alt" placeholder="e.g., Rooftop XYZ" />
+        </div>
+      </div>
+
+      <div class="btns">
+        <button id="gen">Generate Plan</button>
+        <button id="shuffle">Shuffle Variations</button>
+        <button id="copy">Copy to Clipboard</button>
+        <span class="hint">Tip: Personalize “City/Venue” to auto-fill lines.</span>
+      </div>
+
+      <textarea id="out" placeholder="Your plan will appear here…"></textarea>
+      <div class="hint">Consent is mandatory. Read cues; if she hesitates, stop. Individuals vary—adjust to the person, not just the scene.</div>
+    </div>
+  </main>
+
+  <footer>
+    Built for personal use. No fetishizing; be respectful. Calibrate to signals.
+  </footer>
+
+<script>
+/* ---------- Utilities ---------- */
+const pickSome = (arr, k) => {
+  if (!arr || !arr.length) return [];
+  const copy = [...arr];
+  const take = Math.min(k, copy.length);
+  const out = [];
+  for (let i=0; i<take; i++){
+    const idx = Math.floor(Math.random()*copy.length);
+    out.push(copy.splice(idx,1)[0]);
+  }
+  return out;
+};
+const fmt = (s, subs) => s.replace(/\{(\w+)\}/g, (_,k)=> (subs[k] ?? ''));
+const fmtList = (list, subs) => (list||[]).map(s => fmt(s, subs));
+
+/* ---------- Data (race-aware, activity overlays) ---------- */
+const GENERIC = {
+  tone: [
+    "Keep it playful, decisive, and short. Respect boundaries; escalate only on green signals."
+  ],
+  openers: [
+    "I’m doing a quick {type} at {venue} — 30–40 minutes then we ghost. You in?",
+    "Settle a debate: is {venue} actually top-tier or IG hype?"
+  ],
+  dos: [
+    "Have a clear start/stop time; end while it’s fun.",
+    "Tease lightly; ask one sincere question about her current obsession."
+  ],
+  donts: [
+    "Don’t overstay or overshare; mystery > monologue.",
+    "Don’t turn it into a job interview."
+  ],
+  escalation: [
+    "By hang #2, pick a setting that supports closeness (music/view/short walk).",
+    "If hesitation, back off instantly; consent is non-negotiable."
+  ],
+  ig: [ "One candid story > five try-hard posts." ]
+};
+
+const RACE_BASE = {
+  "Chinese": {
+    tone: [
+      "Lead with light tease + decisiveness; keep plans concrete and short.",
+      "Signal you’re socially active without bragging."
+    ],
+    openers: [
+      "Real question: I’m between two spots in {city} — which boba won’t expose me as basic?",
+      "Be honest: Brown sugar at {venue} a 10/10 or overhyped?",
+      "I’m polling locals — best photo-dump café within 10 minutes of {city}?"
+    ],
+    dos: [
+      "Use social proof naturally: one story with friends or a fun venue.",
+      "Keep first meet 30–45 minutes; leave on a high note.",
+      "If vibe is good, suggest rooftop/bar as next step within a week."
+    ],
+    donts: [
+      "Don’t over-explain your CS grind; one sentence is enough.",
+      "Don’t linger after the energy dips — exit while it’s fun."
+    ],
+    escalation: [
+      "By hang #2, switch to a louder context (rooftop/bar) and try light shoulder/arm touch when laughing.",
+      "If she lingers at goodbye, slow lean for a kiss; if she hesitates, pull back smoothly."
+    ],
+    ig: [
+      "Tag a candid with a neutral caption (e.g., “quick sugar debate”). If she reposts, green light.",
+      "1–2 stories/week max; quality > quantity."
+    ]
+  },
+  "Vietnamese": {
+    tone: [
+      "Confident and playful; banter is good. Keep energy up, don’t be timid.",
+      "Rave/club contexts convert fast if signals are there."
+    ],
+    openers: [
+      "If I pull up to {venue} tonight, are you my rave guide or am I dying in the crowd?",
+      "Rate this drop at {venue}: 11/10 or needs more chaos?",
+      "I’m pre-gaming boba before {venue} — you calling the order or am I going rogue?"
+    ],
+    dos: [
+      "Meet at a show or lively bar; move from music to late-night food in one flow.",
+      "Mirror her energy; if she’s dancing, join — don’t spectate from the wall."
+    ],
+    donts: [
+      "Don’t hover or over-ask; make the plan, offer the pull, then move.",
+      "Don’t monologue about tech; keep it one-liners and vibes."
+    ],
+    escalation: [
+      "In the crowd, light waist/shoulder guide through people; watch for reciprocity.",
+      "If vibe is mutual, suggest afterparty or late-night food immediately post-set."
+    ],
+    ig: [
+      "Stories from the venue with a quick shout to the set; tag if she’s comfy.",
+      "If replies cool off, go quiet 7–10 days (scarcity), then reappear with a new plan."
+    ]
+  },
+  "Filipina": {
+    tone: [
+      "Warm, social approach; be funny. Easiest path often goes through the friend group.",
+      "Slower physical pace; build comfort first."
+    ],
+    openers: [
+      "Karaoke serious question: what’s your go-to song so I don’t embarrass myself?",
+      "I’m choosing between {venue} and a new spot in {city} — what’s your rec?",
+      "If we do boba + chill walk this week, are you grading my order?"
+    ],
+    dos: [
+      "Meet the group, be kind to everyone, then pivot to a 1:1 micro-date.",
+      "Karaoke/house kickbacks and café sessions play well."
+    ],
+    donts: [
+      "Don’t flex money or status; humor and reliability win here.",
+      "Don’t rush escalation; aim for hang #3."
+    ],
+    escalation: [
+      "By hang #2–3, light hand/arm touch during laughs; read comfort before leaning in.",
+      "Invite to a cozy house/karaoke night to create an easy closeness."
+    ],
+    ig: [
+      "Group photo dumps over flashy nightlife flexes.",
+      "Reply to stories with specific, positive observations."
+    ]
+  },
+  "Korean": {
+    tone: [
+      "Aesthetic-forward; be decisive, curate your plan. Rooftop/club over endless boba loops.",
+      "If she flakes, don’t chase — let scarcity work."
+    ],
+    openers: [
+      "I’m doing {venue} on Thursday — 45 minutes, skyline, then I vanish. You in?",
+      "Rate my fit or roast me — rooftop test tonight at {venue}.",
+      "Is {venue} still the move, or is there a better view in {city}?"
+    ],
+    dos: [
+      "Dress neatly; pick photogenic venues.",
+      "Move from drink → short walk → clean exit."
+    ],
+    donts: [
+      "Don’t spam texts or over-explain; keep tempo crisp.",
+      "Don’t ask endless “what do you want to do?” — present options."
+    ],
+    escalation: [
+      "On hang #2, side-by-side seating, light knee/arm contact; check reciprocation.",
+      "If green, suggest a low-key afterparty with friends."
+    ],
+    ig: [
+      "Minimalist, clean stories; one candid tag beats ten selfies.",
+      "If interest dips, disappear for a week and reappear with a fresh plan."
+    ]
+  },
+  "Thai": {
+    tone: [
+      "Fashion-forward with nightlife overlap; compliment style, then tease.",
+      "Stack plans (boba → rooftop) so momentum never dies."
+    ],
+    openers: [
+      "Your fit would bully my closet — verdict on {venue} boba before we rooftop it?",
+      "If we double-stack boba then {venue}, are you calling the sugar %?",
+      "I’m stealing one fashion tip at {venue}; what’s the tax?"
+    ],
+    dos: [
+      "Lead with a genuine style compliment; pivot into a playful tease.",
+      "Double-book: quick boba then rooftop/bar."
+    ],
+    donts: [
+      "Don’t be indecisive — momentum matters.",
+      "Don’t overdress costumes; keep it clean and you."
+    ],
+    escalation: [
+      "On rooftop, closer seating, shoulder touch when sharing a view.",
+      "If she leans in, slow kiss; if not, back off gracefully."
+    ],
+    ig: [
+      "Fit pics and venue shots; tag only if she’s comfortable.",
+      "One tasteful dump > daily spam."
+    ]
+  },
+  "Cambodian/Lao": {
+    tone: [
+      "Down-to-earth, rave-friendly; humor + late-night food are clutch.",
+      "Keep it real, skip try-hard flexes."
+    ],
+    openers: [
+      "That drop at {venue} nearly folded me — emergency pho after?",
+      "What’s the undefeated late-night spot after {venue} in {city}?",
+      "I’m pre-gaming with a boba; your order decides my fate."
+    ],
+    dos: [
+      "Rave → food is a golden route to intimacy.",
+      "Self-deprecating jokes land well; be genuine."
+    ],
+    donts: [
+      "Don’t over-plan; let the night breathe.",
+      "Don’t interrogate; vibe over resume."
+    ],
+    escalation: [
+      "At food, sit adjacent, light touch during laughs; walk after if possible.",
+      "If signals are clear, invite to chill afterparty with friends."
+    ],
+    ig: [
+      "Venue + food snaps; tag only if comfortable.",
+      "If convo cools, go scarce for a bit, then re-invite with a new angle."
+    ]
+  },
+  "Japanese-American": {
+    tone: [
+      "Artsy/indie lean; pick quieter spots, witty banter over loud flex.",
+      "Pace is moderate; focus on comfort and specificity."
+    ],
+    openers: [
+      "Which thrift in {city} won’t expose my lack of taste?",
+      "Serious café rec: I need a spot where I can pretend to code and actually people-watch.",
+      "Gallery + boba micro-date: 40 minutes then we bail. Down?"
+    ],
+    dos: [
+      "Café/thrift/gallery walks; thoughtful compliments about taste, not just looks.",
+      "Ask about her creative rabbit holes; share one of yours."
+    ],
+    donts: [
+      "Don’t force loud venues early.",
+      "Don’t rush physicality; let tension build."
+    ],
+    escalation: [
+      "By hang #3, sit closer, light hand brush when sharing something on phone.",
+      "Soft lean at goodbye if the linger is there."
+    ],
+    ig: [
+      "Artsy snaps over club shots; story replies should be specific (“that composition!”).",
+      "Keep aesthetic coherent; less is more."
+    ]
+  },
+  "Mixed": {
+    tone: [
+      "Trend-savvy; confidence + clarity. They’ve seen every DM — be bold and simple.",
+      "Fast invites over paragraph flirts."
+    ],
+    openers: [
+      "Pick our fate: {venue} boba now or {alt} later — choose wisely.",
+      "I’m testing a new rooftop; need a co-critic for 30 minutes.",
+      "Honest take: what’s the most slept-on spot in {city}?"
+    ],
+    dos: [
+      "Strong plan, clean fit, quick pivot to nightlife.",
+      "Be playful-direct; let her opt-in easily."
+    ],
+    donts: [
+      "Don’t drag text threads for days.",
+      "Don’t over-validate; tease lightly instead."
+    ],
+    escalation: [
+      "On hang #2, escalate if signals are mutual; don’t stall.",
+      "Invite to afterparty if vibe peaks; otherwise end on a high note."
+    ],
+    ig: [
+      "Candid tags, short captions; let visuals carry.",
+      "If interest dips, vanish a week, then return with a crisp invite."
+    ]
+  }
+};
+
+const DATE_OVERLAYS = {
+  "Boba": {
+    openers: [
+      "I’ve got 20 minutes and a sugar deficit — {venue} or do you have a better pick?",
+      "If I order {drink} at {venue}, am I basic or cultured?"
+    ],
+    dos: [
+      "Keep it short and mobile; suggest a brief walk after.",
+      "Ask her for the exact order (ice/sugar) — shows you get the ritual."
+    ],
+    donts: [
+      "Don’t park for 2 hours — leave them wanting more.",
+      "Don’t debate flavors to death; make a call."
+    ],
+    escalation: [
+      "Light shoulder touch when laughing; walk side-by-side with occasional eye contact.",
+      "If energy’s strong, seed the next plan before you part: “Rooftop later this week?”"
+    ],
+    ig: [ "Snap the drinks; optional tag with playful caption." ]
+  },
+  "Café": {
+    openers: [
+      "I need a spot to pretend to code while judging latte art — {venue} any good?",
+      "Rank {venue}: cozy study vibe or just photoshoot central?"
+    ],
+    dos: [
+      "Sit at 90° instead of across; easier to build comfort.",
+      "Share a quick story about a project, then pivot back to her world."
+    ],
+    donts: [
+      "Don’t monopolize the convo with tech talk.",
+      "Don’t overstay; 45–60 minutes max."
+    ],
+    escalation: [
+      "Hand brush when sharing something on your phone; check for reciprocation.",
+      "Seed next plan in a louder setting (rave/rooftop)."
+    ],
+    ig: [ "One aesthetic cup/pastry shot; avoid trying too hard." ]
+  },
+  "Rave/Club": {
+    openers: [
+      "What time are you sliding to {venue}? I’m trying to survive the front rail.",
+      "Serious: which set’s the real meltdown tonight?"
+    ],
+    dos: [
+      "Be mobile; guide through the crowd confidently (with consent cues).",
+      "Hydration check, offer breaks — be the calm in the chaos."
+    ],
+    donts: [
+      "Don’t stand behind her like a backpack dude.",
+      "Don’t over-talk; let the music do work."
+    ],
+    escalation: [
+      "Light waist/shoulder guidance in the crowd; if she leans back into you, green.",
+      "Pull to late-night food or afterparty immediately post-set."
+    ],
+    ig: [ "Short story of the drop or lights; tag if comfortable." ]
+  },
+  "Rooftop/Bar": {
+    openers: [
+      "I’ve got a 40-minute window at {venue} tonight — skyline audit™?",
+      "Quick drink at {venue}, then we ghost. Down?"
+    ],
+    dos: [
+      "Pick side-by-side seating with a view; share the view and banter.",
+      "Be the one to decide the first drink to cut indecision."
+    ],
+    donts: [
+      "Don’t get sloppy; 1–2 drinks max.",
+      "Don’t stall at the door; momentum matters."
+    ],
+    escalation: [
+      "Shoulder-to-shoulder proximity; if eye contact lingers, slow lean.",
+      "If vibes peak, suggest a chill afterparty with friends."
+    ],
+    ig: [ "One skyline story; names optional." ]
+  },
+  "Karaoke/House": {
+    openers: [
+      "What’s your disrespectfully good karaoke pick? I need to prepare my ego.",
+      "House chill at {venue} later — bring your chaotic song choice."
+    ],
+    dos: [
+      "Win the group with humor; then carve a short 1:1 pocket (kitchen chat, balcony).",
+      "Offer to queue her song; playful banter about scores."
+    ],
+    donts: [
+      "Don’t hog the mic or over-perform.",
+      "Don’t isolate her from friends too long."
+    ],
+    escalation: [
+      "During 1:1, gentle hand/arm touch when laughing; read cues.",
+      "If comfort’s high, end-of-night cheek kiss or soft lean."
+    ],
+    ig: [ "Group boomerang > cringe solos." ]
+  },
+  "Thrift/Art Walk": {
+    openers: [
+      "Pick a thrift in {city} that won’t expose my lack of taste.",
+      "Gallery stop + quick boba — we bail after 40 minutes."
+    ],
+    dos: [
+      "Ask about her taste; share one weird niche of yours.",
+      "Take a candid (ask before tagging) if the fit is fire."
+    ],
+    donts: [
+      "Don’t pretend expertise; curiosity > performance.",
+      "Don’t stretch it to a marathon; keep it breezy."
+    ],
+    escalation: [
+      "Walk close, light touch guiding through crowds; offer a quick sit-down break.",
+      "Seed a nighttime plan if it’s daytime."
+    ],
+    ig: [ "Candid mirror or mural shot; tags with consent." ]
+  },
+  "Late-night Food": {
+    openers: [
+      "Emergency question: best {food} spot after {venue} — save my night.",
+      "I’m starving after {venue}; {alt} or do you know better?"
+    ],
+    dos: [
+      "Sit adjacent, not across; easier to build warmth.",
+      "Share plates; playful comments about picks."
+    ],
+    donts: [
+      "Don’t drag to 3 hours; 45–60 min keeps the spark.",
+      "Don’t interrogate; light & playful."
+    ],
+    escalation: [
+      "If she lingers post-meal, suggest quick music back at a friend’s or short walk.",
+      "Lingering hug at exit; escalate only with clear signals."
+    ],
+    ig: [ "Food pic + “after-show survival” caption; tag if she’s into it." ]
+  }
+};
+
+const INTEREST_OVERLAY = {
+  "Low": {
+    notes: [
+      "Keep outreach minimal. Let IG breathe for ~7–10 days (scarcity).",
+      "If you invite, make it time-boxed and low pressure: “20-minute boba near {city}.”",
+      "If she’s dry twice, move on — clarity beats chasing."
+    ]
+  },
+  "Medium": {
+    notes: [
+      "Convert within a week: invite to {type} now, then a louder context next.",
+      "Escalate by hang #2 with light touch + clear exit.",
+      "Don’t over-text; logistics > essays."
+    ]
+  },
+  "High": {
+    notes: [
+      "Move fast: set the next plan within 24–72 hours.",
+      "Tag a candid (with comfort); if she engages, afterparty pull is on the table.",
+      "Stay calibrated: enthusiasm without thirst."
+    ]
+  }
+};
+
+/* ---------- Plan builder ---------- */
+function generatePlan() {
+  const race = document.getElementById('race').value;
+  const dtype = document.getElementById('dtype').value;
+  let interest = document.getElementById('interest').value;
+  const city = document.getElementById('city').value.trim() || "your area";
+  const venue = document.getElementById('venue').value.trim() || "the spot";
+  const alt = document.getElementById('alt').value.trim() || "the other place";
+
+  if (interest === "(Auto)") interest = "Medium";
+  const subs = { city, venue, alt, type: dtype, drink:"brown sugar milk tea", food:"noodles" };
+
+  const raceBlock = RACE_BASE[race] || {};
+  const dateBlock = DATE_OVERLAYS[dtype] || {};
+
+  const tone = [...(raceBlock.tone||[]), ...GENERIC.tone];
+  const openers = [...(raceBlock.openers||[]), ...(dateBlock.openers||[]), ...GENERIC.openers];
+  const dos = [...(raceBlock.dos||[]), ...(dateBlock.dos||[]), ...GENERIC.dos];
+  const donts = [...(raceBlock.donts||[]), ...(dateBlock.donts||[]), ...GENERIC.donts];
+  const escalation = [...(raceBlock.escalation||[]), ...(dateBlock.escalation||[]), ...GENERIC.escalation];
+  const ig = [...(raceBlock.ig||[]), ...(dateBlock.ig||[]), ...GENERIC.ig];
+
+  const tonePick = pickSome(fmtList(tone, subs), 2);
+  const openersPick = pickSome(fmtList(openers, subs), 3);
+  const dosPick = pickSome(fmtList(dos, subs), 4);
+  const dontsPick = pickSome(fmtList(donts, subs), 3);
+  const escPick = pickSome(fmtList(escalation, subs), 3);
+  const igPick = pickSome(fmtList(ig, subs), 2);
+
+  let interestNotes = [];
+  if (INTEREST_OVERLAY[interest]) interestNotes = fmtList(INTEREST_OVERLAY[interest].notes, subs);
+
+  const header = `ABG Bible — ${race} • ${dtype} • Interest: ${interest}\n` + "=".repeat(30) + "\n";
+  const sect = (t, arr) => `${t}\n${(arr&&arr.length?arr.map(s=>"• "+s).join("\n"):"• —")}\n\n`;
+
+  const ethics =
+`Consent & Respect:
+• Read cues. If she hesitates or says no, stop and switch gears.
+• Individuals vary — adjust to the person, not just the scene.
+`;
+
+  const plan = header
+    + sect("Vibe & Tone", tonePick)
+    + sect("Openers (copy one):", openersPick)
+    + sect("Do:", dosPick)
+    + sect("Don’t:", dontsPick)
+    + sect("Escalation Tips:", escPick)
+    + sect("IG Moves:", igPick)
+    + (interestNotes.length ? sect("Based on Interest Level:", interestNotes) : "")
+    + ethics;
+
+  document.getElementById('out').value = plan;
+}
+
+document.getElementById('gen').addEventListener('click', generatePlan);
+document.getElementById('shuffle').addEventListener('click', generatePlan);
+document.getElementById('copy').addEventListener('click', async () => {
+  const txt = document.getElementById('out').value.trim();
+  if (!txt) { alert("Nothing to copy yet. Generate a plan first."); return; }
+  try {
+    await navigator.clipboard.writeText(txt);
+    alert("Plan copied to clipboard.");
+  } catch (e) {
+    const ta = document.getElementById('out');
+    ta.select(); document.execCommand('copy');
+    alert("Plan copied (fallback).");
+  }
+});
+
+// Generate on load
+generatePlan();
+
+/* ---------- PWA: register service worker ---------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(console.error);
+  });
+}
+</script>
+</body>
+</html>
